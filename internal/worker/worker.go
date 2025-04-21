@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"log"
-	"time"
 
 	"github.com/1abobik1/tasker/internal/models"
 	"github.com/1abobik1/tasker/internal/service"
@@ -17,13 +16,13 @@ type Worker struct {
 	ch    *amqp.Channel
 	queue string
 	svc   *service.Service
+	registry *Registry
 }
 
-func NewWorker(ch *amqp.Channel, queue string, svc *service.Service) *Worker {
-	return &Worker{ch: ch, queue: queue, svc: svc}
+func NewWorker(ch *amqp.Channel, queue string, svc *service.Service, registry *Registry) *Worker {
+	return &Worker{ch: ch, queue: queue, svc: svc, registry: registry}
 }
 
-// Start начинает консюьмить сообщения и обрабатывать их пока не получит ctx.Done
 func (w *Worker) Start(ctx context.Context) error {
 	msgs, err := w.ch.Consume(
 		w.queue, "", true, false, false, false, nil,
@@ -33,49 +32,40 @@ func (w *Worker) Start(ctx context.Context) error {
 	}
 	log.Println("Worker started. Waiting for messages...")
 
-	for {
-		select {
-		case <-ctx.Done():
-			log.Println("Worker shutting down...")
-			return nil
-		case d, ok := <-msgs:
-			if !ok {
-				return nil
-			}
-			var task models.Task
-			if err := json.Unmarshal(d.Body, &task); err != nil {
-				log.Printf("Failed to unmarshal task: %v", err)
-				continue
-			}
-			go w.processTask(task)
-		}
+	for msg := range msgs {
+		go w.handleMessage(ctx, msg.Body)
 	}
+
+	return nil
 }
 
-func (w *Worker) processTask(task models.Task) {
-	ctx := context.Background()
-
-	log.Printf("Processing task %s...\n", task.ID)
-
-	if err := w.svc.UpdateStatus(ctx, task.ID, models.StatusProcessing); err != nil {
-		log.Printf("Failed to set task status to running: %v", err)
+func (w *Worker) handleMessage(ctx context.Context, body []byte) {
+	var task models.Task
+	if err := json.Unmarshal(body, &task); err != nil {
+		log.Printf("failed to unmarshal task: %v", err)
 		return
 	}
 
-	// Simulate work
-	time.Sleep(8 * time.Second)
-
-	if string(task.Payload) == "fail" {
-		_ = w.svc.SaveError(ctx, task.ID, "simulated error")
-		log.Printf("Task %s failed", task.ID)
+	processor := w.registry.GetProcessor(task.Type)
+	if processor == nil {
+		log.Printf("unknown task type: %s", task.Type)
+		_ = w.svc.SaveError(ctx, task.ID, "unknown task type: "+task.Type)
+		_ = w.svc.UpdateStatus(ctx, task.ID, models.StatusFailed)
 		return
 	}
 
-	result := []byte("result of: " + string(task.Payload))
+	result, err := processor.Process(ctx, task.Payload)
+	if err != nil {
+		log.Printf("failed to process task %s: %v", task.ID, err)
+		_ = w.svc.SaveError(ctx, task.ID, err.Error())
+		_ = w.svc.UpdateStatus(ctx, task.ID, models.StatusFailed)
+		return
+	}
+
 	if err := w.svc.SaveResult(ctx, task.ID, result); err != nil {
-		log.Printf("Failed to save result: %v", err)
+		log.Printf("failed to save result: %v", err)
 		return
 	}
 
-	log.Printf("Task %s completed", task.ID)
+	_ = w.svc.UpdateStatus(ctx, task.ID, models.StatusCompleted)
 }

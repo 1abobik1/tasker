@@ -19,6 +19,7 @@ type RepositoryI interface {
 	SaveError(ctx context.Context, id, errMsg string) error
 }
 
+// публикация в очередь rabbitmq
 type MessageBroker interface {
 	PublishTask(task models.Task) error
 }
@@ -35,7 +36,7 @@ func NewService(repo RepositoryI, producer MessageBroker) *Service {
 	}
 }
 
-func (s *Service) CreateTask(ctx context.Context, input []byte) (string, time.Time, error) {
+func (s *Service) CreateTask(ctx context.Context, taskType string, payload []byte) (string, time.Time, error) {
 	op := "location internal.service.CreateTask"
 
 	uuid := uuid.NewString()
@@ -43,7 +44,8 @@ func (s *Service) CreateTask(ctx context.Context, input []byte) (string, time.Ti
 
 	task := models.Task{
 		ID:        uuid,
-		Payload:   input,
+		Type:      taskType,
+		Payload:   payload,
 		Status:    models.StatusPending,
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -51,9 +53,6 @@ func (s *Service) CreateTask(ctx context.Context, input []byte) (string, time.Ti
 
 	if err := s.repo.Create(ctx, task); err != nil {
 		log.Printf("%v:%v", op, err)
-		if errors.Is(err, errs.ErrIDNotFound) {
-			return "", time.Time{}, errs.ErrIDNotFound
-		}
 		return "", time.Time{}, errs.ErrInternalServer
 	}
 

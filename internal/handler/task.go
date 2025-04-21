@@ -13,7 +13,7 @@ import (
 )
 
 type ServiceI interface {
-	CreateTask(ctx context.Context, input []byte) (string, time.Time, error)
+	CreateTask(ctx context.Context, taskType string, payload []byte) (string, time.Time, error)
 	GetTask(ctx context.Context, uuid string) (models.Task, error)
 }
 
@@ -28,11 +28,11 @@ func NewHandler(svc ServiceI) *Handler {
 func (h *Handler) CreateTask(c *gin.Context) {
 	var req dto.CreateTaskRequest
 	if err := c.BindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": `required fields are "type(string)" and "payload(string)"`})
 		return
 	}
 
-	uuid, createdAt, err := h.svc.CreateTask(c, []byte(req.Input))
+	uuid, createdAt, err := h.svc.CreateTask(c, req.Type, []byte(req.Payload))
 	if err != nil {
 		if errors.Is(err, errs.ErrInternalServer) {
 			c.Status(http.StatusInternalServerError)
@@ -42,6 +42,7 @@ func (h *Handler) CreateTask(c *gin.Context) {
 
 	c.JSON(http.StatusAccepted, dto.CreateTaskResponse{
 		ID:        uuid,
+		Type:      req.Type,
 		Status:    models.StatusPending,
 		CreatedAt: createdAt,
 	})
@@ -56,7 +57,7 @@ func (h *Handler) GetTask(c *gin.Context) {
 	task, err := h.svc.GetTask(c, uuid)
 	if err != nil {
 		if errors.Is(err, errs.ErrIDNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "task not found" })
+			c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
 			return
 		} else {
 			c.Status(http.StatusInternalServerError)
@@ -66,12 +67,13 @@ func (h *Handler) GetTask(c *gin.Context) {
 
 	resp := dto.GetTaskResponse{
 		ID:        task.ID,
+		Type:      task.Type,
 		Status:    task.Status,
 		CreatedAt: task.CreatedAt,
 		UpdatedAt: task.UpdatedAt,
 	}
 	if task.Status == models.StatusCompleted {
-		resp.Result = task.Result
+		resp.Result = string(task.Result)
 	}
 	if task.Error.Valid {
 		resp.Error = task.Error.String

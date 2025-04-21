@@ -16,6 +16,7 @@ const (
 
 type Task struct {
 	ID        string
+	Type      string
 	Payload   []byte
 	Status    TaskStatus
 	Result    []byte

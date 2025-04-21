@@ -12,6 +12,7 @@ import (
 	"github.com/1abobik1/tasker/internal/broker/rabbitmq"
 	"github.com/1abobik1/tasker/internal/db"
 	"github.com/1abobik1/tasker/internal/handler"
+	"github.com/1abobik1/tasker/internal/io_bounds/fetcher"
 	"github.com/1abobik1/tasker/internal/repository"
 	"github.com/1abobik1/tasker/internal/service"
 	"github.com/1abobik1/tasker/internal/worker"
@@ -64,7 +65,11 @@ func main() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
-	w := worker.NewWorker(ch, queueName, svc)
+	// регистрация io_bound задач, для примера добавил только одну задачу "fetch_url"
+	registry := worker.NewRegistry()
+	registry.Register("fetch_url", fetcher.NewFetchURLProcessor())
+
+	w := worker.NewWorker(ch, queueName, svc, registry)
 	go func() {
 		if err := w.Start(ctx); err != nil {
 			log.Printf("Worker error: %v", err)

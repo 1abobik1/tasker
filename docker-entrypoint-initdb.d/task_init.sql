@@ -2,6 +2,7 @@ CREATE TYPE task_status AS ENUM ('pending', 'processing', 'completed', 'failed')
 
 CREATE TABLE IF NOT EXISTS tasks (
   id TEXT PRIMARY KEY,
+  task_type TEXT NOT NULL,
   payload BYTEA NOT NULL,
   status task_status NOT NULL,
   result BYTEA,
