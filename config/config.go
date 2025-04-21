@@ -4,14 +4,16 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/ilyakaznacheev/cleanenv"
 	"github.com/joho/godotenv"
 )
 
 type Config struct {
-	
+	HTTPPort    string `env:"HTTP_PORT" env-required:"true"`
+	PostgresURL string `env:"POSTGRES_URL" env-required:"true"`
+	RabbitMQURL string `env:"RABBITMQ_URL" env-required:"true"`
+	QueueName string `env:"QUEUE_NAME" env-required:"true"`
 }
 
 func MustLoad() *Config {
